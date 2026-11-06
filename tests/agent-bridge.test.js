@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
-import { PermissionOverwrites,OverwriteType } from 'discord.js';
+import { PermissionOverwrites,OverwriteType,Collection } from 'discord.js';
 import { mkdtemp,writeFile,rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -60,19 +60,38 @@ test('owner allowlist rejects other users before touching the queue',async()=>{
 });
 test('private channel permissions resolve even when the owner is not cached',async()=>{
   const created=[];
+  const cache=new Collection();let pins=0,moves=0;
   const guild={id:'1568326446294896640',ownerId:'1251033797336629271',roles:{cache:new Map()},members:{cache:new Map()},channels:{
-    fetch:async()=>({find:()=>undefined}),
-    create:async spec=>{created.push(spec);return {id:spec.name,send:async()=>{}};},
+    fetch:async()=>cache,
+    create:async spec=>{
+      created.push(spec);
+      const channel={...spec,id:String(created.length),parentId:spec.parent,
+        permissionOverwrites:{set:async()=>{}},
+        setParent:async parentId=>{channel.parentId=parentId;moves++;},
+        send:async()=>({id:'guide',pin:async()=>{pins++;}}),messages:{fetch:async()=>null}};
+      cache.set(channel.id,channel);return channel;
+    },
   }};
   const client={user:{id:'1568326223996920080'},guilds:{fetch:async()=>guild}};
   const bridge=new AgentBridge(client,{},{AGENT_BRIDGE_GUILD_ID:guild.id,AGENT_BRIDGE_SECRET:'s'.repeat(64)});
+  bridge.store.status=async()=>({workerOnline:true,jobs:[]});
+  bridge.store.meta=async()=>undefined;bridge.store.setMeta=async()=>{};
   try {
     await bridge.bootstrap();
-    assert.equal(created.length,2);
+    assert.equal(created.filter(s=>['claude','codex'].includes(s.name)).length,2);
     for(const spec of created) {
       assert.equal(spec.permissionOverwrites[0].type,OverwriteType.Role);
       for(const overwrite of spec.permissionOverwrites)assert.doesNotThrow(()=>PermissionOverwrites.resolve(overwrite,guild));
     }
+    assert.equal(moves,2);
+    assert.ok(pins>=7);
+    const previousIds=[...cache.keys()];
+    const count=created.length;
+    const {ensureServerLayout}=await import('../src/agent-bridge/layout.js');
+    await ensureServerLayout(guild,guild.ownerId,client.user.id);
+    assert.equal(created.length,count);
+    assert.deepEqual([...cache.keys()],previousIds);
+    assert.equal(bridge.channels.get(bridge.layout.tasks.id),'codex');
   } finally {bridge.close();}
 });
 test('HTTP bridge refuses unauthenticated and malformed worker requests',async()=>{
