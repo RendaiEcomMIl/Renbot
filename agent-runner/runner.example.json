@@ -1,0 +1,10 @@
+{
+  "relayUrl": "https://YOUR-RENBOT-DOMAIN.up.railway.app",
+  "secret": "GENERATE_A_RANDOM_SECRET_OF_AT_LEAST_40_CHARACTERS",
+  "ownerId": "YOUR_DISCORD_USER_ID",
+  "workerId": "renbot-mac",
+  "workspace": "/path/to/your/workspace",
+  "codexBin": "codex",
+  "claudeBin": "claude",
+  "taskTimeoutMs": 1200000
+}
