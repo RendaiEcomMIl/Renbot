@@ -15,14 +15,6 @@ export const SERVER_LAYOUT = [
     {name:'🚨｜alerts',key:'alerts',topic:'Agent task failures and actionable operational alerts. Owner only.',
       guide:'**Actionable alerts**\nRenbot posts a link here when an agent task fails or is interrupted.\n\nFor other alerts, post: **Problem • Impact • Next action • Resolved/open**. External payment, email and advertising feeds can be connected separately.'},
   ]},
-  { name:'🏪 Stores',channels:[
-    {name:'🔵｜meta-ads',topic:'Advertising plans, experiment records and performance reviews.',
-      guide:'**Meta ads**\nUse one thread per campaign, experiment or issue.\n\n**Template:** Store/campaign • Hypothesis • Variables changed • Budget/date • Result • Next decision.\n\nKeep account credentials out of posts. This channel is ready for your reports and requests; live reporting needs a connected source.'},
-    {name:'💴｜fulfilments',topic:'Fulfilment issues, supplier follow-ups and delivery checkpoints.',
-      guide:'**Fulfilments**\nUse one thread per shipment, supplier or operational issue.\n\n**Template:** Store/reference • Issue • Next action • Due date • Open / Waiting / Resolved.\n\nLink to the source record where possible and keep customer personal information out of posts.'},
-    {name:'🧑‍💻｜support-status',topic:'Customer-support queue summaries, blockers and escalations.',
-      guide:'**Support status**\nPost queue summaries and escalations here.\n\n**Template:** Store • New/open/resolved counts • Main blocker • Next action • Next check.\n\nUse links to the source case rather than copying private customer messages.'},
-  ]},
   { name:'📡 Status',channels:[
     {name:'agent-status',key:'status',topic:'Live Mac runner availability and agent queue status.'},
   ]},
@@ -38,6 +30,23 @@ export function privateOverwrites(guildId,ownerId,botId) {
 
 export async function ensureServerLayout(guild,ownerId,botId) {
   const cache=await guild.channels.fetch();
+  // Retire only the three Stores channels created by this setup, as requested.
+  const retiredParents=new Set();
+  for(const id of ['1568348383393878187','1568348387248578630','1568348390318673990']) {
+    const channel=cache.get(id);
+    if(channel) {
+      retiredParents.add(channel.parentId);
+      await channel.delete('Owner requested removal of the Stores section');
+      cache.delete(id);
+    }
+  }
+  for(const id of retiredParents) {
+    const category=cache.get(id);
+    if(category?.name==='🏪 Stores'&&!cache.some(c=>c?.parentId===id)) {
+      await category.delete('Owner requested removal of the Stores section');
+      cache.delete(id);
+    }
+  }
   const permissions=privateOverwrites(guild.id,ownerId,botId);
   const result={};
   for(const group of SERVER_LAYOUT) {
