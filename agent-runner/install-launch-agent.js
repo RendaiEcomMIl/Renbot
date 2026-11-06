@@ -21,6 +21,8 @@ const plist=`<?xml version="1.0" encoding="UTF-8"?>
 <key>StandardOutPath</key><string>${escape(path.join(logs,'runner.log'))}</string>
 <key>StandardErrorPath</key><string>${escape(path.join(logs,'runner-error.log'))}</string>
 </dict></plist>\n`;
-const target=path.join(home,'Library','LaunchAgents','com.rendai.renbot-agent.plist');
+// Stage outside LaunchAgents until the owner approves remote access.
+const target=process.argv[2]||fileURLToPath(new URL('../.local/bridge-deploy/com.rendai.renbot-agent.plist',import.meta.url));
+await mkdir(path.dirname(target),{recursive:true,mode:0o700});
 await writeFile(target,plist,{mode:0o600});
 console.log('Prepared com.rendai.renbot-agent. This script does not activate the service.');
