@@ -87,4 +87,11 @@ export class AgentStore {
       WHERE status IN ('queued','running') GROUP BY status`);
     return {workerOnline:Date.now()-(meta.rows[0]?.value?.at||0)<60000,jobs:jobs.rows};
   }
+  async meta(key) {
+    return (await this.pool.query('SELECT value FROM renbot_agent_meta WHERE key=$1',[key])).rows[0]?.value;
+  }
+  async setMeta(key,value) {
+    await this.pool.query(`INSERT INTO renbot_agent_meta(key,value) VALUES ($1,$2)
+      ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value`,[key,JSON.stringify(value)]);
+  }
 }
