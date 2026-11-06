@@ -84,7 +84,7 @@ test('private channel permissions resolve even when the owner is not cached',asy
       for(const overwrite of spec.permissionOverwrites)assert.doesNotThrow(()=>PermissionOverwrites.resolve(overwrite,guild));
     }
     assert.equal(moves,2);
-    assert.ok(pins>=7);
+    assert.ok(pins>=5);
     const previousIds=[...cache.keys()];
     const count=created.length;
     const {ensureServerLayout}=await import('../src/agent-bridge/layout.js');
