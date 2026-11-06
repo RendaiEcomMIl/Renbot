@@ -2,6 +2,7 @@ import { createHash,timingSafeEqual } from 'node:crypto';
 import express from 'express';
 import { ChannelType,PermissionFlagsBits,OverwriteType } from 'discord.js';
 import { AgentStore } from './store.js';
+import { ensureServerLayout } from './layout.js';
 
 export function secretMatches(value,secret) {
   if (!secret || secret.length<40 || typeof value!=='string') return false;
@@ -44,7 +45,11 @@ export class AgentBridge {
       } else await channel.permissionOverwrites.set(permissionOverwrites);
       this.channels.set(channel.id,agent);
     }
+    this.layout=await ensureServerLayout(guild,this.ownerId,this.client.user.id);
+    this.channels.set(this.layout.tasks.id,'codex');
+    await this.updateDashboard();
     this.timer=setInterval(()=>this.deliver().catch(()=>{}),4000); this.timer.unref();
+    this.dashboardTimer=setInterval(()=>this.updateDashboard().catch(()=>{}),15000); this.dashboardTimer.unref();
   }
   async handleMessage(message) {
     if(message.author.bot||!this.ownerId) return false;
@@ -144,10 +149,32 @@ export class AgentBridge {
           ids.push(sent.id);
         }
         await this.store.delivered(job.id,ids);
+        if(job.status==='failed'&&this.layout?.alerts) {
+          await this.layout.alerts.send({content:`⚠️ **${job.agent==='claude'?'Claude Code':'Codex'} task needs attention.**\nSee the response: https://discord.com/channels/${this.guildId}/${job.channel_id}/${ids[0]}`,allowedMentions:{parse:[]}}).catch(()=>{});
+        }
         const original=await channel.messages.fetch(job.message_id).catch(()=>null);
         await original?.react(job.status==='failed'?'⚠️':'✅').catch(()=>{});
       }
     } finally {this.deliveryBusy=false;}
   }
-  close() {clearInterval(this.timer);}
+  async updateDashboard() {
+    if(this.dashboardBusy||!this.layout?.status)return;
+    this.dashboardBusy=true;
+    try {
+      const status=await this.store.status();
+      const content=`**Renbot status**\n\nDiscord bot: 🟢 Online\nMac runner: ${status.workerOnline?'🟢 Online':'🔴 Offline'}\nQueue: ${status.jobs.map(j=>`${j.count} ${j.status}`).join(', ')||'No tasks waiting'}\n\nAgents: Claude Code + Codex\n\nChat in <#${[...this.channels].find(([,agent])=>agent==='claude')?.[0]}> or <#${[...this.channels].find(([,agent])=>agent==='codex')?.[0]}>. Create a task thread in <#${this.layout.tasks.id}>.\n\nYour Mac must be awake and online. Use \`!status\` in an agent conversation for a current check.`;
+      if(content===this.lastDashboardContent)return;
+      const key=`layout:${this.guildId}:dashboard`;
+      const saved=await this.store.meta(key);
+      let message=saved?.id?await this.layout.status.messages.fetch(saved.id).catch(()=>null):null;
+      if(message) await message.edit({content,allowedMentions:{parse:[]}});
+      else {
+        message=await this.layout.status.send({content,allowedMentions:{parse:[]}});
+        await message.pin().catch(()=>{});
+        await this.store.setMeta(key,{id:message.id});
+      }
+      this.lastDashboardContent=content;
+    } finally {this.dashboardBusy=false;}
+  }
+  close() {clearInterval(this.timer);clearInterval(this.dashboardTimer);}
 }
