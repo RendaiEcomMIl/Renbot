@@ -5,6 +5,8 @@
   "main": "src/app.js",
   "type": "module",
   "scripts": {
+    "test:bridge": "node --test tests/agent-bridge.test.js",
+    "agent:runner": "node agent-runner/runner.js",
     "start": "node src/app.js",
     "migrate": "node scripts/migrate.js apply",
     "migrate:check": "node scripts/migrate.js check",
@@ -23,10 +25,10 @@
     "express": "^5.1.0",
     "node-cron": "^4.2.1",
     "pg": "^8.11.3",
+    "riffy": "1.0.12",
     "winston": "^3.19.0",
     "winston-daily-rotate-file": "^5.0.0",
-    "zod": "^3.25.76",
-    "riffy": "1.0.12"
+    "zod": "^3.25.76"
   },
   "engines": {
     "node": ">=20.10.0"
@@ -34,5 +36,8 @@
   "overrides": {
     "form-data": "^4.0.6",
     "undici": "^6.27.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.15"
   }
 }

@@ -12,5 +12,7 @@ logs
 *.md
 !README.md
 .DS_Store
+.local
+agent-runner
 coverage
 .agent-tools
