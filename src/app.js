@@ -1,5 +1,5 @@
 ﻿import 'dotenv/config';
-import { Client, Collection, GatewayIntentBits } from 'discord.js';
+import { Client, Collection, GatewayIntentBits, Partials } from 'discord.js';
 import { REST } from '@discordjs/rest';
 import express from 'express';
 import cron from 'node-cron';
@@ -17,10 +17,13 @@ import { initializeMusic } from './services/music/riffySetup.js';
 import { shutdownMusic } from './services/music/playerHandler.js';
 import pkg from '../package.json' with { type: 'json' };
 import { EXPECTED_SCHEMA_VERSION, EXPECTED_SCHEMA_LABEL } from './config/database/schemaVersion.js';
+import { AgentBridge } from './agent-bridge/index.js';
+import { pgDb } from './utils/postgresDatabase.js';
 
 class TitanBot extends Client {
   constructor() {
     super({
+      partials: [Partials.Channel],
       intents: [
         
         GatewayIntentBits.Guilds,                        
@@ -73,6 +76,11 @@ class TitanBot extends Client {
         startupLog(`✅ Database Status: ${dbStatus.connectionType} (fully operational)`);
       }
       
+      if (process.env.AGENT_BRIDGE_ENABLED === 'true') {
+        if (dbStatus.isDegraded || !pgDb.pool) throw new Error('Agent bridge requires persistent PostgreSQL.');
+        this.agentBridge = new AgentBridge(this, pgDb.pool);
+        await this.agentBridge.initialize();
+      }
       startupLog('Starting web server...');
       this.startWebServer();
       
@@ -93,6 +101,10 @@ class TitanBot extends Client {
       startupLog('Registering slash commands globally...');
       await this.registerCommands();
       startupLog('Slash commands registration complete');
+      if (this.agentBridge) {
+        await this.agentBridge.bootstrap();
+        startupLog('Renbot agent bridge ready (owner-only Claude Code and Codex channels).');
+      }
       
       const databaseMode = dbStatus.isDegraded
         ? 'Optional in-memory mode (data resets after restart)'
@@ -111,6 +123,7 @@ class TitanBot extends Client {
 
   startWebServer() {
     const app = express();
+    if (this.agentBridge) app.use('/agent-bridge', this.agentBridge.router());
     const configuredPort = Number(this.config.api?.port || process.env.PORT || 3000);
     const maxPortRetryAttempts = Number(process.env.PORT_RETRY_ATTEMPTS || 5);
     const host = process.env.WEB_HOST || '0.0.0.0';
@@ -331,6 +344,7 @@ class TitanBot extends Client {
   }
 
   async shutdown(reason = 'UNKNOWN') {
+    this.agentBridge?.close();
     shutdownLog(`Bot is shutting down (${reason})...`);
     logger.info(`\n${'='.repeat(60)}`);
     logger.info(`🛑 Graceful Shutdown Initiated (${reason})`);
