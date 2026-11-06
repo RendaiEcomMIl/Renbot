@@ -1,6 +1,6 @@
 import { createHash,timingSafeEqual } from 'node:crypto';
 import express from 'express';
-import { ChannelType,PermissionFlagsBits } from 'discord.js';
+import { ChannelType,PermissionFlagsBits,OverwriteType } from 'discord.js';
 import { AgentStore } from './store.js';
 
 export function secretMatches(value,secret) {
@@ -33,9 +33,9 @@ export class AgentBridge {
     for(const agent of ['claude','codex']) {
       let channel=channels.find(c=>c?.name===agent&&c.type===ChannelType.GuildText);
       const permissionOverwrites=[
-        {id:guild.id,deny:[PermissionFlagsBits.ViewChannel]},
-        {id:this.ownerId,allow:[PermissionFlagsBits.ViewChannel,PermissionFlagsBits.SendMessages,PermissionFlagsBits.ReadMessageHistory,PermissionFlagsBits.AttachFiles,PermissionFlagsBits.CreatePublicThreads,PermissionFlagsBits.SendMessagesInThreads]},
-        {id:this.client.user.id,allow:[PermissionFlagsBits.ViewChannel,PermissionFlagsBits.SendMessages,PermissionFlagsBits.ReadMessageHistory,PermissionFlagsBits.AttachFiles,PermissionFlagsBits.SendMessagesInThreads,PermissionFlagsBits.ManageThreads]},
+        {id:guild.id,type:OverwriteType.Role,deny:[PermissionFlagsBits.ViewChannel]},
+        {id:this.ownerId,type:OverwriteType.Member,allow:[PermissionFlagsBits.ViewChannel,PermissionFlagsBits.SendMessages,PermissionFlagsBits.ReadMessageHistory,PermissionFlagsBits.AttachFiles,PermissionFlagsBits.CreatePublicThreads,PermissionFlagsBits.SendMessagesInThreads]},
+        {id:this.client.user.id,type:OverwriteType.Member,allow:[PermissionFlagsBits.ViewChannel,PermissionFlagsBits.SendMessages,PermissionFlagsBits.ReadMessageHistory,PermissionFlagsBits.AttachFiles,PermissionFlagsBits.SendMessagesInThreads,PermissionFlagsBits.ManageThreads]},
       ];
       if(!channel) {
         channel=await guild.channels.create({name:agent,type:ChannelType.GuildText,permissionOverwrites,
