@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
+import { PermissionOverwrites,OverwriteType } from 'discord.js';
 import { mkdtemp,writeFile,rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -56,6 +57,23 @@ test('owner allowlist rejects other users before touching the queue',async()=>{
   assert.equal(await bridge.handleMessage(message),true);
   assert.equal(await bridge.handleMessage({...message,guild:null}),false);
   assert.equal(await bridge.handleMessage({...message,guild:{id:'999999999999999999'}}),false);
+});
+test('private channel permissions resolve even when the owner is not cached',async()=>{
+  const created=[];
+  const guild={id:'1568326446294896640',ownerId:'1251033797336629271',roles:{cache:new Map()},members:{cache:new Map()},channels:{
+    fetch:async()=>({find:()=>undefined}),
+    create:async spec=>{created.push(spec);return {id:spec.name,send:async()=>{}};},
+  }};
+  const client={user:{id:'1568326223996920080'},guilds:{fetch:async()=>guild}};
+  const bridge=new AgentBridge(client,{},{AGENT_BRIDGE_GUILD_ID:guild.id,AGENT_BRIDGE_SECRET:'s'.repeat(64)});
+  try {
+    await bridge.bootstrap();
+    assert.equal(created.length,2);
+    for(const spec of created) {
+      assert.equal(spec.permissionOverwrites[0].type,OverwriteType.Role);
+      for(const overwrite of spec.permissionOverwrites)assert.doesNotThrow(()=>PermissionOverwrites.resolve(overwrite,guild));
+    }
+  } finally {bridge.close();}
 });
 test('HTTP bridge refuses unauthenticated and malformed worker requests',async()=>{
   const bridge=new AgentBridge({},{},{AGENT_BRIDGE_GUILD_ID:'1568326446294896640',AGENT_BRIDGE_SECRET:'s'.repeat(64)});
