@@ -25,6 +25,13 @@ export class AgentBridge {
     if(!/^\d{17,20}$/.test(this.guildId||'')||(this.secret||'').length<40)
       throw new Error('Agent bridge needs a guild ID and a secret of at least 40 characters.');
     this.channels=new Map(); this.ownerId=null; this.deliveryBusy=false;
+    // Bot-to-bot: channels where the Mac may post as Renbot and read replies (e.g. talking to yutbot).
+    this.peerChannels=new Set((env.AGENT_BRIDGE_PEER_CHANNELS||'').split(',').map(s=>s.trim()).filter(s=>/^\d{17,20}$/.test(s)));
+  }
+  async peerChannel(id) {
+    if(typeof id!=='string'||!this.peerChannels.has(id)) return null;
+    const channel=await this.client.channels.fetch(id).catch(()=>null);
+    return channel?.isTextBased()?channel:null;
   }
   async initialize() { await this.store.initialize(); }
   async bootstrap() {
@@ -47,6 +54,15 @@ export class AgentBridge {
     }
     this.layout=await ensureServerLayout(guild,this.ownerId,this.client.user.id);
     this.channels.set(this.layout.tasks.id,'codex');
+    // Private #yutbot channel for bot-to-bot chat. Permissions are only set on creation so manual adds (yutbot) survive restarts.
+    let peer=channels.find(c=>c?.name==='yutbot'&&c.type===ChannelType.GuildText);
+    if(!peer) peer=await guild.channels.create({name:'yutbot',type:ChannelType.GuildText,topic:'Renbot ↔ yutbot. The Mac posts here as Renbot and reads the replies.',
+      permissionOverwrites:[
+        {id:guild.id,type:OverwriteType.Role,deny:[PermissionFlagsBits.ViewChannel]},
+        {id:this.ownerId,type:OverwriteType.Member,allow:[PermissionFlagsBits.ViewChannel,PermissionFlagsBits.SendMessages,PermissionFlagsBits.ReadMessageHistory]},
+        {id:this.client.user.id,type:OverwriteType.Member,allow:[PermissionFlagsBits.ViewChannel,PermissionFlagsBits.SendMessages,PermissionFlagsBits.ReadMessageHistory]},
+      ]});
+    this.peerChannels.add(peer.id);
     await this.updateDashboard();
     this.timer=setInterval(()=>this.deliver().catch(()=>{}),4000); this.timer.unref();
     this.dashboardTimer=setInterval(()=>this.updateDashboard().catch(()=>{}),15000); this.dashboardTimer.unref();
@@ -127,6 +143,25 @@ export class AgentBridge {
       const job=await this.store.complete(req.body.jobId,id,req.body.result.slice(0,60000),req.body.failed===true);
       if(!job) return res.sendStatus(409);
       res.json({accepted:true}); this.deliver().catch(()=>{});
+    });
+    router.post('/say',async(req,res)=>{
+      const {channelId,text,mentionUserId}=req.body||{};
+      if(typeof text!=='string'||!text.trim()||text.length>1900) return res.sendStatus(400);
+      if(mentionUserId!==undefined&&!/^\d{17,20}$/.test(String(mentionUserId))) return res.sendStatus(400);
+      const channel=await this.peerChannel(channelId); if(!channel) return res.sendStatus(403);
+      const content=mentionUserId?`<@${mentionUserId}> ${text}`:text;
+      const sent=await channel.send({content,allowedMentions:{users:mentionUserId?[String(mentionUserId)]:[],parse:[]}});
+      res.json({messageId:sent.id});
+    });
+    router.post('/read',async(req,res)=>{
+      const {channelId,after}=req.body||{};
+      if(after!==undefined&&!/^\d{17,20}$/.test(String(after))) return res.sendStatus(400);
+      const channel=await this.peerChannel(channelId); if(!channel) return res.sendStatus(403);
+      const limit=Math.min(Math.max(Number(req.body.limit)||20,1),50);
+      const fetched=await channel.messages.fetch(after?{after:String(after),limit}:{limit});
+      res.json({messages:[...fetched.values()].sort((a,b)=>a.createdTimestamp-b.createdTimestamp).map(m=>({
+        id:m.id,authorId:m.author.id,author:m.author.username,bot:m.author.bot,at:m.createdAt.toISOString(),
+        content:m.content,attachments:[...m.attachments.values()].map(a=>({name:a.name,url:a.url}))}))});
     });
     router.use((error,req,res,next)=>{if(!res.headersSent) res.status(503).json({error:'Bridge temporarily unavailable'});});
     return router;
